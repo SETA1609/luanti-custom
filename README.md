@@ -1,3 +1,10 @@
+> **This is `zig-luanti`**, a fork of [Luanti](https://github.com/luanti-org/luanti)
+> by [@SETA1609](https://github.com/SETA1609) that replaces the CMake build with Zig.
+> Engine behavior, the Lua API, and the mod/game format are **intentionally unchanged** —
+> see [FORK.md](FORK.md). For the engine itself, please go upstream.
+
+---
+
 <div align="center">
     <img src="textures/base/pack/logo.png" width="32%">
     <h1>Luanti (formerly Minetest)</h1>

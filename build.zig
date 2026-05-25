@@ -22,7 +22,7 @@ const vlib = @import("build_lib.zig");
 const PROJECT_NAME = "luanti";
 const PROJECT_NAME_CAPITALIZED = "Luanti";
 const VERSION_MAJOR = 5;
-const VERSION_MINOR = 13;
+const VERSION_MINOR = 17;
 const VERSION_PATCH = 0;
 const DEVELOPMENT_BUILD = true;
 

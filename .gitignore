@@ -98,6 +98,7 @@ doc/mkdocs/venv/
 ## Zig build system (in-progress migration; see branch zig-build-system)
 .zig-cache/
 zig-out/
+zig-pkg/
 
 ## Build files
 build/

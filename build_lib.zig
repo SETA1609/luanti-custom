@@ -44,6 +44,12 @@ pub const VendorLib = struct {
     /// for C-only libs.
     flags: []const []const u8 = &cxx_flags,
 
+    /// Override the language Zig would otherwise infer from each source's
+    /// file extension. Used when, e.g., a Lua-style library ships `.c`
+    /// files that must be compiled as C++ (upstream does the same with
+    /// `set_source_files_properties(... LANGUAGE CXX)`).
+    language: ?std.Build.Module.CSourceLanguage = null,
+
     /// Include directories given as paths relative to the build root.
     include_paths: []const []const u8 = &.{},
 
@@ -76,7 +82,11 @@ pub fn addVendorLib(
     });
 
     for (spec.sources) |src| {
-        mod.addCSourceFile(.{ .file = b.path(src), .flags = spec.flags });
+        mod.addCSourceFile(.{
+            .file = b.path(src),
+            .flags = spec.flags,
+            .language = spec.language,
+        });
     }
     for (spec.include_paths) |p| mod.addIncludePath(b.path(p));
     for (spec.generated_include_paths) |lp| mod.addIncludePath(lp);

@@ -180,6 +180,89 @@ pub fn build(b: *std.Build) void {
         .install_headers = &.{.{ .src = "lib/bitop/bit.h", .dest = "bit.h" }},
     });
 
+    // Phase 3: vendored Lua 5.1.4
+    //
+    // Mirrors lib/lua/CMakeLists.txt + lib/lua/src/CMakeLists.txt. Two
+    // upstream quirks worth flagging:
+    //  - The 28 source files have `.c` extensions but upstream forces them
+    //    to compile as C++ (set_source_files_properties LANGUAGE CXX). We
+    //    do the same via `.language = .cpp` on the VendorLib spec.
+    //  - LUA_USE_POSIX / LUA_USE_DLOPEN / LUA_USE_MACOSX / LUA_BUILD_AS_DLL
+    //    are platform-gated. The flag composition matches CMake's branches
+    //    in lib/lua/CMakeLists.txt:12-58 exactly.
+    //
+    // The library is skipped under -Duse-luajit=true because LuaJIT
+    // replaces it wholesale; Phase 3 only adds the vendored fallback.
+    const lua_flags: []const []const u8 = switch (os_tag) {
+        .macos, .ios, .driverkit, .tvos, .visionos, .watchos => &.{
+            "-std=c++23",
+            "-DLUA_USE_POSIX",
+            "-DLUA_USE_MACOSX",
+            "-DLUA_USE_DLOPEN",
+        },
+        .linux => &.{
+            "-std=c++23",
+            "-DLUA_USE_POSIX",
+            "-DLUA_USE_DLOPEN",
+        },
+        .freebsd, .openbsd, .netbsd, .dragonfly => &.{
+            "-std=c++23",
+            "-DLUA_USE_POSIX",
+        },
+        .windows => &.{
+            "-std=c++23",
+            "-DLUA_BUILD_AS_DLL",
+        },
+        else => &.{
+            "-std=c++23",
+            "-DLUA_ANSI",
+        },
+    };
+
+    const lua = vlib.addVendorLib(b, target, optimize, .{
+        .name = "lua",
+        .sources = &.{
+            "lib/lua/src/lapi.c",
+            "lib/lua/src/lauxlib.c",
+            "lib/lua/src/lbaselib.c",
+            "lib/lua/src/lcode.c",
+            "lib/lua/src/ldblib.c",
+            "lib/lua/src/ldebug.c",
+            "lib/lua/src/ldo.c",
+            "lib/lua/src/ldump.c",
+            "lib/lua/src/lfunc.c",
+            "lib/lua/src/lgc.c",
+            "lib/lua/src/linit.c",
+            "lib/lua/src/liolib.c",
+            "lib/lua/src/llex.c",
+            "lib/lua/src/lmathlib.c",
+            "lib/lua/src/lmem.c",
+            "lib/lua/src/loadlib.c",
+            "lib/lua/src/lobject.c",
+            "lib/lua/src/lopcodes.c",
+            "lib/lua/src/loslib.c",
+            "lib/lua/src/lparser.c",
+            "lib/lua/src/lstate.c",
+            "lib/lua/src/lstring.c",
+            "lib/lua/src/lstrlib.c",
+            "lib/lua/src/ltable.c",
+            "lib/lua/src/ltablib.c",
+            "lib/lua/src/ltm.c",
+            "lib/lua/src/lundump.c",
+            "lib/lua/src/lvm.c",
+            "lib/lua/src/lzio.c",
+        },
+        .flags = lua_flags,
+        .language = .cpp, // upstream compiles .c as C++.
+        .include_paths = &.{"lib/lua/src"},
+        .install_headers = &.{
+            .{ .src = "lib/lua/src/lua.h", .dest = "lua.h" },
+            .{ .src = "lib/lua/src/lauxlib.h", .dest = "lauxlib.h" },
+            .{ .src = "lib/lua/src/lualib.h", .dest = "lualib.h" },
+            .{ .src = "lib/lua/src/luaconf.h", .dest = "luaconf.h" },
+        },
+    });
+
     // tiniergltf is header-only — expose its include paths as a Module that
     // downstream C++ targets can pull in via `addImport`.
     // Mirrors lib/tiniergltf/CMakeLists.txt:11-22.
@@ -189,11 +272,15 @@ pub fn build(b: *std.Build) void {
     tiniergltf.addIncludePath(b.path("src"));
 
     // Install artifacts so they appear under zig-out/lib/ and zig-out/include/.
-    // Bitop is conditional: only needed when the user is NOT using LuaJIT.
+    // Bitop and Lua are conditional: only needed when the user is NOT using
+    // LuaJIT (LuaJIT has its own Lua runtime AND a built-in `bit` library).
     b.installArtifact(jsoncpp);
     b.installArtifact(gmp);
     b.installArtifact(sha256);
-    if (!opts.use_luajit) b.installArtifact(bitop);
+    if (!opts.use_luajit) {
+        b.installArtifact(bitop);
+        b.installArtifact(lua);
+    }
 
     // Named convenience steps so users can build a single lib in isolation,
     // e.g. `zig build jsoncpp`.
@@ -202,6 +289,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "gmp", .lib = gmp },
         .{ .name = "sha256", .lib = sha256 },
         .{ .name = "bitop", .lib = bitop },
+        .{ .name = "lua", .lib = lua },
     }) |e| {
         const step = b.step(e.name, b.fmt("Build vendored {s} static lib", .{e.name}));
         step.dependOn(&e.lib.step);

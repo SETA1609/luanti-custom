@@ -57,6 +57,7 @@ messages on that branch for the current state.
 | 12    |        | macOS `.app` bundle                                                 |
 | 13    |        | Android shared library                                              |
 | 14    |        | Remove CMake                                                        |
+| 15+   | planned| Modernise engine sources from C++17 to C++23 (post-migration sweep) |
 
 ## Pulling upstream
 

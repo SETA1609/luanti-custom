@@ -1,0 +1,28 @@
+.{
+    .name = .zig_luanti,
+    .version = "5.13.0-dev",
+    .fingerprint = 0xd78c9f8fe7c68bf, // zig-luanti fork; do not change.
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "irr",
+        "lib",
+        "cmake",
+        "doc",
+        "po",
+        "fonts",
+        "textures",
+        "builtin",
+        "client",
+        "games",
+        "misc",
+        "util",
+        "android",
+        "fastlane",
+        "LICENSE.txt",
+        "README.md",
+    },
+}

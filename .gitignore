@@ -95,6 +95,10 @@ doc/mkdocs/docs/*.md
 doc/mkdocs/mkdocs.yml
 doc/mkdocs/venv/
 
+## Zig build system (in-progress migration; see branch zig-build-system)
+.zig-cache/
+zig-out/
+
 ## Build files
 build/
 CMakeFiles

@@ -1,4 +1,5 @@
 const std = @import("std");
+const vlib = @import("build_lib.zig");
 
 // =============================================================================
 // zig-luanti build system — Phase 1
@@ -111,6 +112,100 @@ pub fn build(b: *std.Build) void {
     // Future C/C++ targets will consume these via:
     //   exe.addIncludePath(generated.getDirectory());
     // For now, we just expose them so they can be inspected after `zig build`.
+
+    // -------------------------------------------------------------------------
+    // Phase 2: vendored libraries from lib/
+    //
+    // Each lib is described inline as a vlib.VendorLib spec; the only shared
+    // path is `vlib.addVendorLib`. Add a new lib here as another addVendorLib
+    // call — don't introduce per-lib wrapper functions.
+    //
+    // The libs aren't linked into anything yet — that wiring lands in
+    // Phase 5+. For now `zig build` only verifies they compile in isolation.
+    // -------------------------------------------------------------------------
+
+    const jsoncpp = vlib.addVendorLib(b, target, optimize, .{
+        .name = "jsoncpp",
+        .sources = &.{"lib/jsoncpp/jsoncpp.cpp"},
+        .include_paths = &.{"lib/jsoncpp"},
+        .install_headers_dir = .{ .src = "lib/jsoncpp/json", .dest = "json" },
+        // Mirrors lib/jsoncpp/CMakeLists.txt:1.
+    });
+
+    const gmp = vlib.addVendorLib(b, target, optimize, .{
+        .name = "gmp",
+        .sources = &.{"lib/gmp/mini-gmp.c"},
+        .flags = &vlib.c_flags,
+        .include_paths = &.{"lib/gmp"},
+        .install_headers = &.{.{ .src = "lib/gmp/mini-gmp.h", .dest = "mini-gmp.h" }},
+        .link = .c,
+        // Mirrors lib/gmp/CMakeLists.txt:1.
+    });
+
+    // sha256 needs a tiny per-library cmake_config.h that declares whether
+    // <endian.h> exists on the target. We synthesize it here and feed the
+    // resulting LazyPath in via `generated_include_paths`.
+    // Mirrors lib/sha256/CMakeLists.txt:1-15 + lib/sha256/cmake_config.h.in.
+    const sha256_config_dir = blk: {
+        const has_endian_h = switch (os_tag) {
+            .linux, .freebsd, .openbsd, .netbsd, .dragonfly, .haiku => true,
+            else => false,
+        };
+        const wf = b.addWriteFiles();
+        _ = wf.add("cmake_config.h", if (has_endian_h)
+            "// Filled in by the build system\n\n#pragma once\n\n#define HAVE_ENDIAN_H\n"
+        else
+            "// Filled in by the build system\n\n#pragma once\n\n/* #undef HAVE_ENDIAN_H */\n");
+        break :blk wf.getDirectory();
+    };
+
+    const sha256 = vlib.addVendorLib(b, target, optimize, .{
+        .name = "sha256",
+        .sources = &.{"lib/sha256/sha256.c"},
+        .flags = &vlib.c_flags,
+        .include_paths = &.{"lib/sha256"},
+        .generated_include_paths = &.{sha256_config_dir},
+        .install_headers = &.{.{ .src = "lib/sha256/my_sha256.h", .dest = "my_sha256.h" }},
+        .link = .c,
+    });
+
+    // bitop needs the Lua headers (lib/lua/src) — the headers exist on
+    // disk now; Phase 3 builds the Lua library itself. Only relevant when
+    // the user is NOT on LuaJIT.
+    // Mirrors lib/bitop/CMakeLists.txt:1-2.
+    const bitop = vlib.addVendorLib(b, target, optimize, .{
+        .name = "bitop",
+        .sources = &.{"lib/bitop/bit.cpp"},
+        .include_paths = &.{ "lib/bitop", "lib/lua/src" },
+        .install_headers = &.{.{ .src = "lib/bitop/bit.h", .dest = "bit.h" }},
+    });
+
+    // tiniergltf is header-only — expose its include paths as a Module that
+    // downstream C++ targets can pull in via `addImport`.
+    // Mirrors lib/tiniergltf/CMakeLists.txt:11-22.
+    const tiniergltf = b.addModule("tiniergltf", .{ .target = target, .optimize = optimize });
+    tiniergltf.addIncludePath(b.path("lib/tiniergltf"));
+    tiniergltf.addIncludePath(b.path("lib/jsoncpp"));
+    tiniergltf.addIncludePath(b.path("src"));
+
+    // Install artifacts so they appear under zig-out/lib/ and zig-out/include/.
+    // Bitop is conditional: only needed when the user is NOT using LuaJIT.
+    b.installArtifact(jsoncpp);
+    b.installArtifact(gmp);
+    b.installArtifact(sha256);
+    if (!opts.use_luajit) b.installArtifact(bitop);
+
+    // Named convenience steps so users can build a single lib in isolation,
+    // e.g. `zig build jsoncpp`.
+    for ([_]struct { name: []const u8, lib: *std.Build.Step.Compile }{
+        .{ .name = "jsoncpp", .lib = jsoncpp },
+        .{ .name = "gmp", .lib = gmp },
+        .{ .name = "sha256", .lib = sha256 },
+        .{ .name = "bitop", .lib = bitop },
+    }) |e| {
+        const step = b.step(e.name, b.fmt("Build vendored {s} static lib", .{e.name}));
+        step.dependOn(&e.lib.step);
+    }
 }
 
 // =============================================================================

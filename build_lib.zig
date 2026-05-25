@@ -70,6 +70,21 @@ pub const VendorLib = struct {
     link: enum { c, cpp } = .cpp,
 };
 
+/// Pulls a library artifact out of a fetched dependency by name, filtering
+/// by `kind == .lib`. Works around the fact that some packages (e.g.
+/// allyourcodebase/curl) install both a library AND an executable with the
+/// same name, which makes the standard `dep.artifact(name)` lookup panic
+/// with "ambiguous artifact".
+pub fn findLib(dep: *std.Build.Dependency, name: []const u8) *std.Build.Step.Compile {
+    for (dep.builder.install_tls.step.dependencies.items) |dep_step| {
+        const inst = dep_step.cast(std.Build.Step.InstallArtifact) orelse continue;
+        if (inst.artifact.kind == .lib and std.mem.eql(u8, inst.artifact.name, name)) {
+            return inst.artifact;
+        }
+    }
+    @panic("findLib: library not found in dependency");
+}
+
 /// Build a vendored static library from a spec. Returns the Compile step.
 pub fn addVendorLib(
     b: *std.Build,

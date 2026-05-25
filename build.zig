@@ -153,6 +153,43 @@ pub fn build(b: *std.Build) void {
     const sqlite3 = b.dependency("sqlite3", .{ .target = target, .optimize = optimize }).artifact("sqlite3");
 
     // -------------------------------------------------------------------------
+    // Phase 7: client media stack — fetched packages.
+    //
+    // libpng:   image loader for IrrlichtMt (Phase 8) and the engine
+    // freetype: font rendering (CGUITTFont in irr/src + src/gui/)
+    // SDL2:     windowing & input backend for IrrlichtMt and direct use
+    // mbedtls:  TLS backend for curl (per FORK.md / migration plan)
+    // curl:     HTTP client (httpfetch.cpp) — enabled per build option
+    //
+    // The libjpeg-turbo / libogg / libvorbis / openal-soft set is missing
+    // from allyourcodebase as of Zig 0.16 and will be vendored separately
+    // in a follow-up Phase 7 commit.
+    // -------------------------------------------------------------------------
+    const libpng = b.dependency("libpng", .{ .target = target, .optimize = optimize }).artifact("png");
+    const freetype = b.dependency("freetype", .{ .target = target, .optimize = optimize }).artifact("freetype");
+    const sdl2 = b.dependency("sdl", .{ .target = target, .optimize = optimize }).artifact("SDL2");
+    const mbedtls = b.dependency("mbedtls", .{ .target = target, .optimize = optimize }).artifact("mbedtls");
+    // curl: mbedTLS as the TLS backend (FORK.md decision); all the optional
+    // protocol/auth extras (HTTP/2, SSH, LDAP, IDN, PSL) disabled so we
+    // don't depend on system libs. Luanti only uses curl for plain HTTP/S
+    // fetches (server-list, content downloads), so the basics suffice.
+    //
+    // The curl package installs both the library (`libcurl.a`) and a CLI
+    // (`curl`) under the same internal name. `vlib.findLib` filters by
+    // kind so `.artifact("curl")` doesn't panic with "ambiguous".
+    const curl_dep = b.dependency("curl", .{
+        .target = target,
+        .optimize = optimize,
+        .@"use-mbedtls" = true,
+        .@"http-only" = true, // disables FTP/SMTP/LDAP/RTSP/TELNET/... — only HTTP(S) is used
+        .nghttp2 = false, // HTTP/2 not needed by Luanti
+        .libssh2 = false,
+        .libidn2 = false,
+        .libpsl = false,
+    });
+    const curl = vlib.findLib(curl_dep, "curl");
+
+    // -------------------------------------------------------------------------
     // Phase 5: EngineCommon static library.
     //
     // C++ engine code shared between client and server. mapgen, scripting,
@@ -255,6 +292,11 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(zlib);
     b.installArtifact(zstd);
     b.installArtifact(sqlite3);
+    b.installArtifact(libpng);
+    b.installArtifact(freetype);
+    b.installArtifact(sdl2);
+    b.installArtifact(mbedtls);
+    b.installArtifact(curl);
     b.installArtifact(engine_common);
     if (luantiserver) |exe| b.installArtifact(exe);
 
@@ -268,6 +310,11 @@ pub fn build(b: *std.Build) void {
         .{ .name = "zlib", .lib = zlib },
         .{ .name = "zstd", .lib = zstd },
         .{ .name = "sqlite3", .lib = sqlite3 },
+        .{ .name = "libpng", .lib = libpng },
+        .{ .name = "freetype", .lib = freetype },
+        .{ .name = "sdl2", .lib = sdl2 },
+        .{ .name = "mbedtls", .lib = mbedtls },
+        .{ .name = "curl", .lib = curl },
         .{ .name = "EngineCommon", .lib = engine_common },
     }) |e| {
         const step = b.step(e.name, b.fmt("Build {s} static lib", .{e.name}));

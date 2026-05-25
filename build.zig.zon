@@ -16,6 +16,26 @@
             .url = "git+https://github.com/allyourcodebase/sqlite3#b7514a2b76003bee57db1fc78e84a2abc7499efa",
             .hash = "sqlite3-3.51.0-DMxLWuAOAABO27GnPH0iTeI57EkQPpGwqI7LTfiE4Pda",
         },
+        .libpng = .{
+            .url = "git+https://github.com/allyourcodebase/libpng#e123eca2140de78f1017a46c24e330fb3024fc58",
+            .hash = "libpng-1.6.57-oiaFGuYqAAB3CK1mjIzXHn2Z3EVV9okuko-VH23OOSV_",
+        },
+        .freetype = .{
+            .url = "git+https://github.com/allyourcodebase/freetype#884fd2235e6ae1ec4306eda30b3259f20930ed2e",
+            .hash = "freetype-2.14.3-C3-WdXSKAAB-kHs4qgRoeoFnRkNQn6M_SSlUGZ6ywgBQ",
+        },
+        .sdl = .{
+            .url = "git+https://github.com/allyourcodebase/SDL#a6bec0e79bd8060f4923980e01512e0e76d4032a",
+            .hash = "SDL-2.32.10-JToi3wW3EgEeBBdlH9SX0W_c8mVWSaa0_Ys3uja3Y4Ft",
+        },
+        .mbedtls = .{
+            .url = "git+https://github.com/allyourcodebase/mbedtls#3aa71a19acc173ae57b6a1114d62f2fdfd22960c",
+            .hash = "mbedtls-3.6.4-E4NUR2wWAAAUSvVbho9aaU31-e4D8glu9l1VfxKezBkV",
+        },
+        .curl = .{
+            .url = "git+https://github.com/allyourcodebase/curl#ab30a38bc47c8ad83ec7016f4ae3af1958d76ac3",
+            .hash = "curl-8.18.0-mFDAWOf0AAAE2R408-AD3oi63paK_MBWcxkqR6zkNsmL",
+        },
     },
     .paths = .{
         "build.zig",

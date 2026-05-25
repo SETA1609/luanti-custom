@@ -271,6 +271,24 @@ pub fn build(b: *std.Build) void {
     tiniergltf.addIncludePath(b.path("lib/jsoncpp"));
     tiniergltf.addIncludePath(b.path("src"));
 
+    // -------------------------------------------------------------------------
+    // Phase 4: foundation deps (zlib, zstd, sqlite3)
+    //
+    // Fetched as Zig packages via build.zig.zon. Each package's own
+    // build.zig compiles the upstream sources from a hashed tarball, so
+    // these are vendored-from-source just like the lib/ entries above —
+    // just managed by the Zig package manager instead of being checked
+    // into this repo.
+    // -------------------------------------------------------------------------
+    const zlib_dep = b.dependency("zlib", .{ .target = target, .optimize = optimize });
+    const zlib = zlib_dep.artifact("z");
+
+    const zstd_dep = b.dependency("zstd", .{ .target = target, .optimize = optimize });
+    const zstd = zstd_dep.artifact("zstd");
+
+    const sqlite3_dep = b.dependency("sqlite3", .{ .target = target, .optimize = optimize });
+    const sqlite3 = sqlite3_dep.artifact("sqlite3");
+
     // Install artifacts so they appear under zig-out/lib/ and zig-out/include/.
     // Bitop and Lua are conditional: only needed when the user is NOT using
     // LuaJIT (LuaJIT has its own Lua runtime AND a built-in `bit` library).
@@ -281,15 +299,21 @@ pub fn build(b: *std.Build) void {
         b.installArtifact(bitop);
         b.installArtifact(lua);
     }
+    b.installArtifact(zlib);
+    b.installArtifact(zstd);
+    b.installArtifact(sqlite3);
 
     // Named convenience steps so users can build a single lib in isolation,
-    // e.g. `zig build jsoncpp`.
+    // e.g. `zig build jsoncpp` or `zig build zlib`.
     for ([_]struct { name: []const u8, lib: *std.Build.Step.Compile }{
         .{ .name = "jsoncpp", .lib = jsoncpp },
         .{ .name = "gmp", .lib = gmp },
         .{ .name = "sha256", .lib = sha256 },
         .{ .name = "bitop", .lib = bitop },
         .{ .name = "lua", .lib = lua },
+        .{ .name = "zlib", .lib = zlib },
+        .{ .name = "zstd", .lib = zstd },
+        .{ .name = "sqlite3", .lib = sqlite3 },
     }) |e| {
         const step = b.step(e.name, b.fmt("Build vendored {s} static lib", .{e.name}));
         step.dependOn(&e.lib.step);

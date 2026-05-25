@@ -11,8 +11,11 @@
 const std = @import("std");
 
 /// C++ flags used for every vendored C++ source file.
-/// Bumped from C++17 to C++23 for the zig-luanti fork.
-pub const cxx_flags = [_][]const u8{ "-std=c++23", "-fno-strict-aliasing" };
+/// Matches CMake's `set(CMAKE_CXX_STANDARD 17)`. A bump to C++23 was
+/// attempted earlier in the fork but the engine sources rely on
+/// pre-C++20 behavior (implicit <iterator>, ostream<<wchar_t, ...) so
+/// the bump has been parked until after the build-system migration.
+pub const cxx_flags = [_][]const u8{ "-std=c++17", "-fno-strict-aliasing" };
 
 /// C flags used for every vendored C source file. Empty — the toolchain
 /// picks a recent default and CMake doesn't set anything special either.

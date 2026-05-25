@@ -53,11 +53,15 @@ pub const Options = struct {
         optimize: std.builtin.OptimizeMode,
     ) Options {
         return .{
-            // Top-level build switches (CMakeLists.txt:37-42)
+            // Top-level build switches (CMakeLists.txt:37-42).
+            // CMake defaults: client=true, server=false, unittests=true.
+            // The zig-luanti fork flips two during the migration:
+            //  - server defaults to true (server-first validation path).
+            //  - unittests defaults to false until Phase 10 vendors Catch2.
             .build_client = b.option(bool, "build-client", "Build client") orelse true,
-            .build_server = b.option(bool, "build-server", "Build server") orelse false,
-            .build_unittests = b.option(bool, "build-unittests", "Build unittests") orelse true,
-            .build_benchmarks = b.option(bool, "build-benchmarks", "Build benchmarks") orelse false,
+            .build_server = b.option(bool, "build-server", "Build server") orelse true,
+            .build_unittests = b.option(bool, "build-unittests", "Build unittests (needs Catch2; Phase 10)") orelse false,
+            .build_benchmarks = b.option(bool, "build-benchmarks", "Build benchmarks (needs Catch2; Phase 10)") orelse false,
             .build_documentation = b.option(bool, "build-documentation", "Build Doxygen docs") orelse true,
 
             // Misc top-level (CMakeLists.txt:60-90)

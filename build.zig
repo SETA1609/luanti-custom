@@ -97,6 +97,19 @@ pub fn build(b: *std.Build) void {
         .install_headers = &.{.{ .src = "lib/bitop/bit.h", .dest = "bit.h" }},
     });
 
+    // lib/lstrpack — single-file C library that backports Lua 5.3's
+    // string.pack/unpack to the engine's Lua 5.1 runtime. Needs Lua headers
+    // privately and exposes its own header publicly.
+    // Mirrors lib/lstrpack/CMakeLists.txt:1-7.
+    const lstrpack = vlib.addVendorLib(b, target, optimize, .{
+        .name = "lstrpack",
+        .sources = &.{"lib/lstrpack/lstrpack.c"},
+        .flags = &vlib.c_flags,
+        .include_paths = &.{ "lib/lstrpack", "lib/lua/src" },
+        .install_headers = &.{.{ .src = "lib/lstrpack/lstrpack.h", .dest = "lstrpack.h" }},
+        .link = .c,
+    });
+
     // tiniergltf is header-only — exposed as a Module rather than a static
     // lib so downstream targets can pull in its include paths via addImport.
     const tiniergltf = b.addModule("tiniergltf", .{ .target = target, .optimize = optimize });
@@ -109,12 +122,12 @@ pub fn build(b: *std.Build) void {
     // MACOSX / BUILD_AS_DLL gated on os_tag.
     const lua_flags: []const []const u8 = switch (os_tag) {
         .macos, .ios, .driverkit, .tvos, .visionos, .watchos => &.{
-            "-std=c++23", "-DLUA_USE_POSIX", "-DLUA_USE_MACOSX", "-DLUA_USE_DLOPEN",
+            "-std=c++17", "-DLUA_USE_POSIX", "-DLUA_USE_MACOSX", "-DLUA_USE_DLOPEN",
         },
-        .linux => &.{ "-std=c++23", "-DLUA_USE_POSIX", "-DLUA_USE_DLOPEN" },
-        .freebsd, .openbsd, .netbsd, .dragonfly => &.{ "-std=c++23", "-DLUA_USE_POSIX" },
-        .windows => &.{ "-std=c++23", "-DLUA_BUILD_AS_DLL" },
-        else => &.{ "-std=c++23", "-DLUA_ANSI" },
+        .linux => &.{ "-std=c++17", "-DLUA_USE_POSIX", "-DLUA_USE_DLOPEN" },
+        .freebsd, .openbsd, .netbsd, .dragonfly => &.{ "-std=c++17", "-DLUA_USE_POSIX" },
+        .windows => &.{ "-std=c++17", "-DLUA_BUILD_AS_DLL" },
+        else => &.{ "-std=c++17", "-DLUA_ANSI" },
     };
 
     const lua = vlib.addVendorLib(b, target, optimize, .{
@@ -162,6 +175,73 @@ pub fn build(b: *std.Build) void {
     if (!opts.use_luajit) engine_common.root_module.linkLibrary(lua);
 
     // -------------------------------------------------------------------------
+    // Phase 6: luantiserver executable.
+    //
+    // Adds `engine.server_sources` (108 .cpp files: common_SRCS direct +
+    // mapgen + script + common_server + server_network) on top of
+    // EngineCommon. MT_BUILDTARGET=2 tells src/config.h that this is a
+    // server build, which gates the client-only branches in main.cpp.
+    // Catch2 / unittest sources are NOT wired in yet — Phase 10 does that.
+    // -------------------------------------------------------------------------
+    const luantiserver = if (opts.build_server) blk: {
+        const exe_mod = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .link_libcpp = true,
+        });
+        const server_flags = [_][]const u8{
+            "-std=c++17",
+            "-fno-strict-aliasing",
+            "-DUSE_CMAKE_CONFIG_H",
+            "-DMT_BUILDTARGET=2",
+        };
+        for (engine.server_sources) |src| {
+            exe_mod.addCSourceFile(.{ .file = b.path(src), .flags = &server_flags });
+        }
+        for (engine.include_paths) |p| exe_mod.addIncludePath(b.path(p));
+        exe_mod.addIncludePath(generated.getDirectory());
+
+        exe_mod.linkLibrary(engine_common);
+        exe_mod.linkLibrary(zlib);
+        exe_mod.linkLibrary(zstd);
+        exe_mod.linkLibrary(sqlite3);
+        exe_mod.linkLibrary(sha256);
+        exe_mod.linkLibrary(jsoncpp);
+        exe_mod.linkLibrary(gmp);
+        exe_mod.linkLibrary(lstrpack);
+        if (!opts.use_luajit) {
+            exe_mod.linkLibrary(lua);
+            exe_mod.linkLibrary(bitop);
+        }
+
+        const exe = b.addExecutable(.{
+            .name = "luantiserver",
+            .root_module = exe_mod,
+        });
+
+        // PLATFORM_LIBS — src/CMakeLists.txt:285-366. Threads come in via
+        // libc, but dl/rt have to be explicit on Linux.
+        switch (os_tag) {
+            .linux => {
+                exe.root_module.linkSystemLibrary("dl", .{});
+                exe.root_module.linkSystemLibrary("rt", .{});
+            },
+            .freebsd, .openbsd, .netbsd, .dragonfly => {
+                exe.root_module.linkSystemLibrary("pthread", .{});
+            },
+            .windows => {
+                exe.root_module.linkSystemLibrary("ws2_32", .{});
+                exe.root_module.linkSystemLibrary("shlwapi", .{});
+                exe.root_module.linkSystemLibrary("winmm", .{});
+                exe.root_module.linkSystemLibrary("version", .{});
+            },
+            else => {},
+        }
+
+        break :blk exe;
+    } else null;
+
+    // -------------------------------------------------------------------------
     // Installs & per-library convenience steps.
     // -------------------------------------------------------------------------
     b.installArtifact(jsoncpp);
@@ -171,10 +251,12 @@ pub fn build(b: *std.Build) void {
         b.installArtifact(bitop);
         b.installArtifact(lua);
     }
+    b.installArtifact(lstrpack);
     b.installArtifact(zlib);
     b.installArtifact(zstd);
     b.installArtifact(sqlite3);
     b.installArtifact(engine_common);
+    if (luantiserver) |exe| b.installArtifact(exe);
 
     for ([_]struct { name: []const u8, lib: *std.Build.Step.Compile }{
         .{ .name = "jsoncpp", .lib = jsoncpp },
@@ -182,6 +264,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "sha256", .lib = sha256 },
         .{ .name = "bitop", .lib = bitop },
         .{ .name = "lua", .lib = lua },
+        .{ .name = "lstrpack", .lib = lstrpack },
         .{ .name = "zlib", .lib = zlib },
         .{ .name = "zstd", .lib = zstd },
         .{ .name = "sqlite3", .lib = sqlite3 },
@@ -189,6 +272,10 @@ pub fn build(b: *std.Build) void {
     }) |e| {
         const step = b.step(e.name, b.fmt("Build {s} static lib", .{e.name}));
         step.dependOn(&e.lib.step);
+    }
+    if (luantiserver) |exe| {
+        const step = b.step("luantiserver", "Build the Luanti dedicated server executable");
+        step.dependOn(&exe.step);
     }
 }
 

@@ -50,17 +50,25 @@ pub fn build(b: *std.Build) void {
         .build_with_tracy = b.option(bool, "build-with-tracy", "Build with the Tracy profiler client") orelse false,
         .version_extra = b.option([]const u8, "version-extra", "String to append to version") orelse "",
 
-        // Optional dependencies (src/CMakeLists.txt)
-        .enable_curl = b.option(bool, "enable-curl", "Use cURL for HTTP") orelse true,
-        .enable_gettext = b.option(bool, "enable-gettext", "Use gettext for translations") orelse true,
-        .enable_sound = b.option(bool, "enable-sound", "Enable sound (client)") orelse true,
-        .enable_curses = b.option(bool, "enable-curses", "Enable curses console (server)") orelse true,
-        .enable_postgresql = b.option(bool, "enable-postgresql", "Enable PostgreSQL backend") orelse true,
-        .enable_leveldb = b.option(bool, "enable-leveldb", "Enable LevelDB backend") orelse true,
-        .enable_redis = b.option(bool, "enable-redis", "Enable Redis backend") orelse true,
+        // Optional dependencies. CMake's defaults are mostly `true` — the
+        // CMake build then silently disables anything `find_package` can't
+        // locate. The Zig build vendors every dep we ship, so the matching
+        // pattern here is: default to `true` only once the dep has actually
+        // landed in this branch. Until Phase 7 vendors curl/freetype/etc.,
+        // the corresponding flags below default to `false` so EngineCommon
+        // builds out-of-the-box and the rest of the engine compiles cleanly.
+        // Flip them back to true (or pass -Denable-...=true) as their deps
+        // come in.
+        .enable_curl = b.option(bool, "enable-curl", "Use cURL for HTTP (deps land in Phase 7)") orelse false,
+        .enable_gettext = b.option(bool, "enable-gettext", "Use gettext for translations (Phase 7)") orelse false,
+        .enable_sound = b.option(bool, "enable-sound", "Enable sound (client; Phase 7)") orelse false,
+        .enable_curses = b.option(bool, "enable-curses", "Enable curses console (server)") orelse false,
+        .enable_postgresql = b.option(bool, "enable-postgresql", "Enable PostgreSQL backend") orelse false,
+        .enable_leveldb = b.option(bool, "enable-leveldb", "Enable LevelDB backend") orelse false,
+        .enable_redis = b.option(bool, "enable-redis", "Enable Redis backend") orelse false,
         .enable_prometheus = b.option(bool, "enable-prometheus", "Enable Prometheus metrics") orelse false,
-        .enable_spatial = b.option(bool, "enable-spatial", "Enable libspatialindex (server entity AOI)") orelse true,
-        .enable_openssl = b.option(bool, "enable-openssl", "Use OpenSSL for SHA256 acceleration") orelse true,
+        .enable_spatial = b.option(bool, "enable-spatial", "Enable libspatialindex (server entity AOI)") orelse false,
+        .enable_openssl = b.option(bool, "enable-openssl", "Use OpenSSL for SHA256 acceleration") orelse false,
         .use_luajit = b.option(bool, "use-luajit", "Use LuaJIT instead of vendored Lua 5.1") orelse false,
         .use_sdl2 = b.option(bool, "use-sdl2", "Use SDL2 as the windowing/input backend") orelse true,
         .use_system_gmp = b.option(bool, "use-system-gmp", "Link the system GMP instead of the vendored copy") orelse false,
@@ -84,10 +92,12 @@ pub fn build(b: *std.Build) void {
     // -------------------------------------------------------------------------
     // Generated headers (replaces src/cmake_config.h.in + GenerateVersion.cmake)
     // -------------------------------------------------------------------------
+    const platform_probes = ConfigProbes.detect(os_tag);
+
     const generated = b.addWriteFiles();
     const cmake_config_h_lp = generated.add(
         "cmake_config.h",
-        renderCmakeConfigH(b, version_string, dirs, optimize, opts),
+        renderCmakeConfigH(b, version_string, dirs, optimize, opts, platform_probes),
     );
     const cmake_config_githash_h_lp = generated.add(
         "cmake_config_githash.h",
@@ -303,8 +313,47 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(zstd);
     b.installArtifact(sqlite3);
 
+    // -------------------------------------------------------------------------
+    // Phase 5: EngineCommon static library
+    //
+    // Holds the C++ engine code that is shared between client and server.
+    // Mirrors what CMake assembles into the OBJECT library `EngineCommon`
+    // at src/CMakeLists.txt:607-623 — i.e. `independent_SRCS` plus the
+    // util/threading/content/database/network-common subtrees. mapgen,
+    // scripting, server-net and client-net are deliberately NOT here; they
+    // are added to their respective executables in Phases 6 and 9.
+    //
+    // EngineCommon picks up its compile-time configuration from
+    // cmake_config.h (the generated header from Phase 1) gated by
+    // -DUSE_CMAKE_CONFIG_H. Several engine .cpp files (httpfetch, curses,
+    // leveldb/redis/postgres backends, prometheus, etc.) compile to stubs
+    // when their feature flag is 0 — so they live unconditionally in the
+    // source list and the corresponding -Denable-... option controls
+    // whether their body is emitted.
+    // -------------------------------------------------------------------------
+    const engine_common = vlib.addVendorLib(b, target, optimize, .{
+        .name = "EngineCommon",
+        .sources = &engine_common_sources,
+        .flags = &engine_cxx_flags,
+        .include_paths = &engine_include_paths,
+        .generated_include_paths = &.{generated.getDirectory()},
+    });
+
+    // Bring in include paths from the vendored deps. linkLibrary at the
+    // static-lib level propagates include directories without emitting
+    // any actual link, which is exactly what an OBJECT library needs.
+    engine_common.root_module.linkLibrary(zlib);
+    engine_common.root_module.linkLibrary(zstd);
+    engine_common.root_module.linkLibrary(sqlite3);
+    engine_common.root_module.linkLibrary(sha256);
+    engine_common.root_module.linkLibrary(jsoncpp);
+    engine_common.root_module.linkLibrary(gmp);
+    if (!opts.use_luajit) engine_common.root_module.linkLibrary(lua);
+
+    b.installArtifact(engine_common);
+
     // Named convenience steps so users can build a single lib in isolation,
-    // e.g. `zig build jsoncpp` or `zig build zlib`.
+    // e.g. `zig build jsoncpp` or `zig build EngineCommon`.
     for ([_]struct { name: []const u8, lib: *std.Build.Step.Compile }{
         .{ .name = "jsoncpp", .lib = jsoncpp },
         .{ .name = "gmp", .lib = gmp },
@@ -314,11 +363,132 @@ pub fn build(b: *std.Build) void {
         .{ .name = "zlib", .lib = zlib },
         .{ .name = "zstd", .lib = zstd },
         .{ .name = "sqlite3", .lib = sqlite3 },
+        .{ .name = "EngineCommon", .lib = engine_common },
     }) |e| {
-        const step = b.step(e.name, b.fmt("Build vendored {s} static lib", .{e.name}));
+        const step = b.step(e.name, b.fmt("Build {s} static lib", .{e.name}));
         step.dependOn(&e.lib.step);
     }
 }
+
+// -----------------------------------------------------------------------------
+// Phase 5 source lists and compile config.
+//
+// Kept at file scope so they're easy to diff against the CMake source lists.
+// If upstream adds a .cpp to one of the referenced CMakeLists, add it here too.
+// -----------------------------------------------------------------------------
+
+// Mirrors src/CMakeLists.txt:420-456 plus the PARENT_SCOPE source lists from
+// src/{util,threading,content,database,network}/CMakeLists.txt.
+const engine_common_sources = [_][]const u8{
+    // independent_SRCS — src/CMakeLists.txt:420-449
+    "src/chat.cpp",
+    "src/content_nodemeta.cpp",
+    "src/convert_json.cpp",
+    "src/craftdef.cpp",
+    "src/debug.cpp",
+    "src/face_position_cache.cpp",
+    "src/gettext_plural_form.cpp",
+    "src/httpfetch.cpp",
+    "src/hud_element.cpp",
+    "src/inventory.cpp",
+    "src/itemstackmetadata.cpp",
+    "src/log.cpp",
+    "src/metadata.cpp",
+    "src/modchannels.cpp",
+    "src/nameidmapping.cpp",
+    "src/nodemetadata.cpp",
+    "src/nodetimer.cpp",
+    "src/noise.cpp",
+    "src/objdef.cpp",
+    "src/object_properties.cpp",
+    "src/particles.cpp",
+    "src/profiler.cpp",
+    "src/serialization.cpp",
+    "src/settings.cpp",
+    "src/sound_spec.cpp",
+    "src/staticobject.cpp",
+    "src/terminal_chat_console.cpp",
+    "src/texture_override.cpp",
+    "src/tileanimation.cpp",
+    "src/tool.cpp",
+
+    // util_SRCS — src/util/CMakeLists.txt:5-26
+    "src/util/areastore.cpp",
+    "src/util/auth.cpp",
+    "src/util/base64.cpp",
+    "src/util/colorize.cpp",
+    "src/util/directiontables.cpp",
+    "src/util/enriched_string.cpp",
+    "src/util/guid.cpp",
+    "src/util/hashing.cpp",
+    "src/util/ieee_float.cpp",
+    "src/util/metricsbackend.cpp",
+    "src/util/numeric.cpp",
+    "src/util/pointedthing.cpp",
+    "src/util/pointabilities.cpp",
+    "src/util/quicktune.cpp",
+    "src/util/serialize.cpp",
+    "src/util/screenshot.cpp",
+    "src/util/sha1.cpp",
+    "src/util/string.cpp",
+    "src/util/srp.cpp",
+    "src/util/timetaker.cpp",
+    "src/util/png.cpp",
+    "src/util/enum_string.cpp",
+
+    // threading_SRCS — src/threading/CMakeLists.txt:5-7
+    "src/threading/event.cpp",
+    "src/threading/thread.cpp",
+    "src/threading/semaphore.cpp",
+
+    // content_SRCS — src/content/CMakeLists.txt:5-9
+    "src/content/content.cpp",
+    "src/content/mod_configuration.cpp",
+    "src/content/mods.cpp",
+    "src/content/subgames.cpp",
+
+    // database_SRCS — src/database/CMakeLists.txt:5-12
+    "src/database/database.cpp",
+    "src/database/database-dummy.cpp",
+    "src/database/database-files.cpp",
+    "src/database/database-leveldb.cpp",
+    "src/database/database-postgresql.cpp",
+    "src/database/database-redis.cpp",
+    "src/database/database-sqlite3.cpp",
+
+    // common_network_SRCS — src/network/CMakeLists.txt:5-11
+    "src/network/address.cpp",
+    "src/network/connection.cpp",
+    "src/network/mtp/impl.cpp",
+    "src/network/mtp/threads.cpp",
+    "src/network/networkpacket.cpp",
+    "src/network/networkprotocol.cpp",
+    "src/network/socket.cpp",
+};
+
+// C++23, plus the USE_CMAKE_CONFIG_H toggle (src/CMakeLists.txt:281) that
+// tells engine .cpp files to read cmake_config.h instead of falling back
+// to default constants. -Wno-* knobs trim the noise from Luanti's C++17
+// code being compiled at C++23.
+const engine_cxx_flags = [_][]const u8{
+    "-std=c++23",
+    "-fno-strict-aliasing",
+    "-DUSE_CMAKE_CONFIG_H",
+};
+
+// Include directories EngineCommon needs at compile time. Headers from the
+// vendored zlib/zstd/sqlite3/lua/jsoncpp/gmp/sha256 deps come in via
+// `linkLibrary` calls above (Zig propagates the dep's installed include
+// paths transitively).
+const engine_include_paths = [_][]const u8{
+    "src",
+    "src/script",
+    "lib/jsoncpp",
+    "lib/gmp",
+    "lib/sha256",
+    "lib/lua/src",
+    "irr/include",
+};
 
 // =============================================================================
 // Helpers
@@ -373,6 +543,45 @@ const InstallDirs = struct {
     metainfodir: []const u8,
     icondir: []const u8,
     localedir: []const u8,
+};
+
+// Compile-time feature probes — the boolean answers CMake's
+// `check_include_files` calls would give. Static OS-based detection is
+// good enough for the platforms Luanti supports.
+const ConfigProbes = struct {
+    have_endian_h: bool,
+    have_strlcpy: bool,
+    have_malloc_trim: bool,
+
+    fn detect(os_tag: std.Target.Os.Tag) ConfigProbes {
+        return switch (os_tag) {
+            .linux => .{
+                .have_endian_h = true,
+                .have_strlcpy = false, // glibc historically lacks it; musl >= 1.2.2 has it
+                .have_malloc_trim = true,
+            },
+            .freebsd, .openbsd, .netbsd, .dragonfly => .{
+                .have_endian_h = true,
+                .have_strlcpy = true,
+                .have_malloc_trim = false,
+            },
+            .haiku => .{
+                .have_endian_h = true,
+                .have_strlcpy = true,
+                .have_malloc_trim = false,
+            },
+            .macos, .ios, .driverkit, .tvos, .visionos, .watchos => .{
+                .have_endian_h = false, // Darwin uses <libkern/OSByteOrder.h>
+                .have_strlcpy = true,
+                .have_malloc_trim = false,
+            },
+            else => .{
+                .have_endian_h = false,
+                .have_strlcpy = false,
+                .have_malloc_trim = false,
+            },
+        };
+    }
 };
 
 // Mirrors CMakeLists.txt:43-59. Disable LTO on Apple targets and on
@@ -534,6 +743,7 @@ fn renderCmakeConfigH(
     d: InstallDirs,
     optimize: std.builtin.OptimizeMode,
     opts: Options,
+    probes: ConfigProbes,
 ) []const u8 {
     const head = b.fmt(
         \\// Filled in by the build system
@@ -586,9 +796,9 @@ fn renderCmakeConfigH(
         \\#define USE_SYSTEM_JSONCPP {d}
         \\#define USE_REDIS {d}
         \\#define USE_OPENSSL {d}
-        \\#define HAVE_ENDIAN_H 0
-        \\#define HAVE_STRLCPY 0
-        \\#define HAVE_MALLOC_TRIM 0
+        \\#define HAVE_ENDIAN_H {d}
+        \\#define HAVE_STRLCPY {d}
+        \\#define HAVE_MALLOC_TRIM {d}
         \\#define CURSES_HAVE_CURSES_H 0
         \\#define CURSES_HAVE_NCURSES_H 0
         \\#define CURSES_HAVE_NCURSES_NCURSES_H 0
@@ -617,6 +827,9 @@ fn renderCmakeConfigH(
         @intFromBool(opts.use_system_jsoncpp),
         @intFromBool(opts.enable_redis),
         @intFromBool(opts.enable_openssl),
+        @intFromBool(probes.have_endian_h),
+        @intFromBool(probes.have_strlcpy),
+        @intFromBool(probes.have_malloc_trim),
         @intFromBool(opts.build_unittests),
         @intFromBool(opts.build_benchmarks),
         @intFromBool(opts.use_sdl2),

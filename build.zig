@@ -400,6 +400,94 @@ pub fn build(b: *std.Build) void {
     } else null;
 
     // -------------------------------------------------------------------------
+    // Phase 9: luanti (client) executable. VALIDATION GATE 2.
+    //
+    // Builds with server_sources + client_only_sources (~207 .cpp files
+    // on top of EngineCommon + IrrlichtMt), MT_BUILDTARGET=1 (gates the
+    // client-launcher branch in src/main.cpp via src/config.h:40-49).
+    //
+    // Links IrrlichtMt and freetype on top of the server's link set.
+    // OpenAL / Vorbis / Ogg would also link here when USE_SOUND=true;
+    // since enable_sound defaults to false during the migration and the
+    // corresponding deps aren't vendored yet, the client's sound code
+    // compiles only the stub `src/client/sound.cpp` and no real audio
+    // output happens.
+    // -------------------------------------------------------------------------
+    const luanti = if (opts.build_client) blk: {
+        const exe_mod = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .link_libcpp = true,
+        });
+        const client_flags = [_][]const u8{
+            "-std=gnu++17",
+            "-fno-strict-aliasing",
+            "-DUSE_CMAKE_CONFIG_H",
+            "-DMT_BUILDTARGET=1",
+        };
+        for (engine.server_sources) |src| {
+            exe_mod.addCSourceFile(.{ .file = b.path(src), .flags = &client_flags });
+        }
+        for (engine.client_only_sources) |src| {
+            exe_mod.addCSourceFile(.{ .file = b.path(src), .flags = &client_flags });
+        }
+        // Engine + irr include paths, plus the SDL2 pre-generated header
+        // directory and the libjpeg config header (irr's image loaders
+        // need both).
+        for (engine.include_paths) |p| exe_mod.addIncludePath(b.path(p));
+        for (engine.irr_include_paths) |p| exe_mod.addIncludePath(b.path(p));
+        exe_mod.addIncludePath(generated.getDirectory());
+        exe_mod.addIncludePath(sdl_dep.path("include"));
+        exe_mod.addIncludePath(sdl_dep.path("include-pregen"));
+
+        exe_mod.linkLibrary(engine_common);
+        exe_mod.linkLibrary(irrlichtmt);
+        exe_mod.linkLibrary(zlib);
+        exe_mod.linkLibrary(zstd);
+        exe_mod.linkLibrary(sqlite3);
+        exe_mod.linkLibrary(sha256);
+        exe_mod.linkLibrary(jsoncpp);
+        exe_mod.linkLibrary(gmp);
+        exe_mod.linkLibrary(lstrpack);
+        exe_mod.linkLibrary(libpng);
+        exe_mod.linkLibrary(libjpeg);
+        exe_mod.linkLibrary(freetype);
+        exe_mod.linkLibrary(sdl2);
+        if (!opts.use_luajit) {
+            exe_mod.linkLibrary(lua);
+            exe_mod.linkLibrary(bitop);
+        }
+
+        // System libs (mirrors src/CMakeLists.txt:285-366 PLATFORM_LIBS,
+        // plus IrrlichtMt's transitive GL dependency).
+        switch (os_tag) {
+            .linux => {
+                exe_mod.linkSystemLibrary("dl", .{});
+                exe_mod.linkSystemLibrary("rt", .{});
+                exe_mod.linkSystemLibrary("GL", .{});
+            },
+            .freebsd, .openbsd, .netbsd, .dragonfly => {
+                exe_mod.linkSystemLibrary("pthread", .{});
+                exe_mod.linkSystemLibrary("GL", .{});
+            },
+            .windows => {
+                exe_mod.linkSystemLibrary("ws2_32", .{});
+                exe_mod.linkSystemLibrary("shlwapi", .{});
+                exe_mod.linkSystemLibrary("winmm", .{});
+                exe_mod.linkSystemLibrary("version", .{});
+                exe_mod.linkSystemLibrary("opengl32", .{});
+            },
+            else => {},
+        }
+
+        const exe = b.addExecutable(.{
+            .name = "luanti",
+            .root_module = exe_mod,
+        });
+        break :blk exe;
+    } else null;
+
+    // -------------------------------------------------------------------------
     // Installs & per-library convenience steps.
     // -------------------------------------------------------------------------
     b.installArtifact(jsoncpp);
@@ -422,6 +510,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(engine_common);
     b.installArtifact(irrlichtmt);
     if (luantiserver) |exe| b.installArtifact(exe);
+    if (luanti) |exe| b.installArtifact(exe);
 
     for ([_]struct { name: []const u8, lib: *std.Build.Step.Compile }{
         .{ .name = "jsoncpp", .lib = jsoncpp },
@@ -447,6 +536,10 @@ pub fn build(b: *std.Build) void {
     }
     if (luantiserver) |exe| {
         const step = b.step("luantiserver", "Build the Luanti dedicated server executable");
+        step.dependOn(&exe.step);
+    }
+    if (luanti) |exe| {
+        const step = b.step("luanti", "Build the Luanti client executable");
         step.dependOn(&exe.step);
     }
 }

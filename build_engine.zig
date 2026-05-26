@@ -238,12 +238,16 @@ pub const irr_include_paths = [_][]const u8{
     "irr/src",
 };
 
-// Sources that the luantiserver executable adds on top of `common_sources`
-// (the EngineCommon static lib). This is what CMake calls `server_SRCS =
-// common_SRCS`, minus the files already in EngineCommon. Source: walking
-// src/CMakeLists.txt:462-499 and the PARENT_SCOPE lists in
-// src/{server,script,script/common,script/cpp_api,script/lua_api,mapgen,
-// network}/CMakeLists.txt.
+// Sources added on top of EngineCommon (the `common_sources` static lib).
+// This is what CMake calls `common_SRCS` minus `independent_SRCS`, and
+// the same set goes into BOTH the luanti client and luantiserver target.
+// Despite the name this is NOT server-exclusive — the client compiles it
+// too (because client_SRCS includes ${common_SRCS} in
+// src/CMakeLists.txt:542). The server has nothing on top of these; the
+// client adds `client_only_sources` below.
+// Source: walking src/CMakeLists.txt:462-499 plus the PARENT_SCOPE lists
+// in src/{server,script,script/common,script/cpp_api,script/lua_api,
+// mapgen,network}/CMakeLists.txt.
 pub const server_sources = [_][]const u8{
     // common_SRCS direct files — src/CMakeLists.txt:462-494
     // (these are NOT in independent_SRCS / EngineCommon).
@@ -369,4 +373,142 @@ pub const server_sources = [_][]const u8{
     // server_network_SRCS — src/network/CMakeLists.txt:15-18
     "src/network/serveropcodes.cpp",
     "src/network/serverpackethandler.cpp",
+};
+
+// Client-only sources, in addition to everything the server has.
+// Mirrors the `client_SRCS` aggregation in src/CMakeLists.txt:540-549,
+// minus the `${common_SRCS}` entry which the client picks up via
+// `server_sources` above.
+// Sound files under src/client/sound/ are skipped — they're only added
+// when USE_SOUND=ON, which is off in this build (Phase 7 deferred
+// libogg/libvorbis/openal-soft); `sound.cpp` (the stub) is unconditional.
+pub const client_only_sources = [_][]const u8{
+    // src/client/ — src/client/CMakeLists.txt:28-86 (USE_SOUND=off path)
+    "src/client/sound.cpp",
+    "src/client/meshgen/collector.cpp",
+    "src/client/render/anaglyph.cpp",
+    "src/client/render/core.cpp",
+    "src/client/render/factory.cpp",
+    "src/client/render/plain.cpp",
+    "src/client/render/sidebyside.cpp",
+    "src/client/render/stereo.cpp",
+    "src/client/render/secondstage.cpp",
+    "src/client/render/pipeline.cpp",
+    "src/client/activeobjectmgr.cpp",
+    "src/client/camera.cpp",
+    "src/client/client.cpp",
+    "src/client/clientenvironment.cpp",
+    "src/client/clientlauncher.cpp",
+    "src/client/clientmap.cpp",
+    "src/client/clientmedia.cpp",
+    "src/client/clientobject.cpp",
+    "src/client/clouds.cpp",
+    "src/client/content_cao.cpp",
+    "src/client/content_cso.cpp",
+    "src/client/content_mapblock.cpp",
+    "src/client/filecache.cpp",
+    "src/client/fontengine.cpp",
+    "src/client/game.cpp",
+    "src/client/gameui.cpp",
+    "src/client/game_formspec.cpp",
+    "src/client/guiscalingfilter.cpp",
+    "src/client/hud.cpp",
+    "src/client/imagefilters.cpp",
+    "src/client/inputhandler.cpp",
+    "src/client/item_visuals_manager.cpp",
+    "src/client/joystick_controller.cpp",
+    "src/client/keycode.cpp",
+    "src/client/localplayer.cpp",
+    "src/client/mapblock_mesh.cpp",
+    "src/client/mesh.cpp",
+    "src/client/mesh_generator_thread.cpp",
+    "src/client/minimap.cpp",
+    "src/client/node_visuals.cpp",
+    "src/client/particles.cpp",
+    "src/client/renderingengine.cpp",
+    "src/client/shader.cpp",
+    "src/client/sky.cpp",
+    "src/client/sound_maker.cpp",
+    "src/client/tile.cpp",
+    "src/client/texturepaths.cpp",
+    "src/client/texturesource.cpp",
+    "src/client/imagesource.cpp",
+    "src/client/wieldmesh.cpp",
+    "src/client/mod_vfs.cpp",
+    "src/client/shadows/dynamicshadows.cpp",
+    "src/client/shadows/dynamicshadowsrender.cpp",
+    "src/client/shadows/shadowsshadercallbacks.cpp",
+    "src/client/shadows/shadowsScreenQuad.cpp",
+
+    // src/gui/ — src/gui/CMakeLists.txt:5-33
+    "src/gui/guiAnimatedImage.cpp",
+    "src/gui/guiBackgroundImage.cpp",
+    "src/gui/guiBox.cpp",
+    "src/gui/guiButton.cpp",
+    "src/gui/guiButtonImage.cpp",
+    "src/gui/guiButtonItemImage.cpp",
+    "src/gui/guiButtonKey.cpp",
+    "src/gui/guiChatConsole.cpp",
+    "src/gui/statusTextHelper.cpp",
+    "src/gui/guiEditBoxWithScrollbar.cpp",
+    "src/gui/guiEngine.cpp",
+    "src/gui/guiFormSpecMenu.cpp",
+    "src/gui/guiInventoryList.cpp",
+    "src/gui/guiItemImage.cpp",
+    "src/gui/guiOpenURL.cpp",
+    "src/gui/guiPasswordChange.cpp",
+    "src/gui/guiPathSelectMenu.cpp",
+    "src/gui/guiScene.cpp",
+    "src/gui/guiScrollBar.cpp",
+    "src/gui/guiScrollContainer.cpp",
+    "src/gui/guiTable.cpp",
+    "src/gui/guiHyperText.cpp",
+    "src/gui/guiVolumeChange.cpp",
+    "src/gui/modalMenu.cpp",
+    "src/gui/profilergraph.cpp",
+    "src/gui/touchcontrols.cpp",
+    "src/gui/touchscreenlayout.cpp",
+    "src/gui/touchscreeneditor.cpp",
+    "src/gui/drawItemStack.cpp",
+
+    // src/irrlicht_changes/ — src/irrlicht_changes/CMakeLists.txt:3-11
+    "src/irrlicht_changes/static_text.cpp",
+    "src/irrlicht_changes/CGUITTFont.cpp",
+
+    // client_network_SRCS — src/network/CMakeLists.txt:22-25
+    "src/network/clientopcodes.cpp",
+    "src/network/clientpackethandler.cpp",
+
+    // client_SCRIPT_SRCS top-level — src/script/CMakeLists.txt:20-24
+    "src/script/scripting_mainmenu.cpp",
+    "src/script/scripting_client.cpp",
+    "src/script/scripting_pause_menu.cpp",
+    "src/script/scripting_sscsm.cpp",
+
+    // client_SCRIPT_CPP_API_SRCS — src/script/cpp_api/CMakeLists.txt:21-25
+    "src/script/cpp_api/s_client.cpp",
+    "src/script/cpp_api/s_client_common.cpp",
+    "src/script/cpp_api/s_mainmenu.cpp",
+    "src/script/cpp_api/s_pause_menu.cpp",
+    "src/script/cpp_api/s_sscsm.cpp",
+
+    // client_SCRIPT_LUA_API_SRCS — src/script/lua_api/CMakeLists.txt:34-46
+    // l_storage.cpp is in BOTH common and client lists in CMake; we let
+    // server_sources cover it (CMake dedups; Zig would compile it twice).
+    "src/script/lua_api/l_camera.cpp",
+    "src/script/lua_api/l_client.cpp",
+    "src/script/lua_api/l_client_common.cpp",
+    "src/script/lua_api/l_client_sound.cpp",
+    "src/script/lua_api/l_localplayer.cpp",
+    "src/script/lua_api/l_mainmenu.cpp",
+    "src/script/lua_api/l_mainmenu_sound.cpp",
+    "src/script/lua_api/l_menu_common.cpp",
+    "src/script/lua_api/l_minimap.cpp",
+    "src/script/lua_api/l_particles_local.cpp",
+    "src/script/lua_api/l_pause_menu.cpp",
+    "src/script/lua_api/l_sscsm.cpp",
+
+    // client_SCRIPT_SSCSM_SRCS — src/script/sscsm/CMakeLists.txt:3-6
+    "src/script/sscsm/sscsm_controller.cpp",
+    "src/script/sscsm/sscsm_environment.cpp",
 };

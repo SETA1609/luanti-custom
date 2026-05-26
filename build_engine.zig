@@ -118,6 +118,126 @@ pub const include_paths = [_][]const u8{
     "irr/include",
 };
 
+// IrrlichtMt sources. Mirrors irr/src/CMakeLists.txt — the union of the
+// five OBJECT libraries (IRRMESHOBJ, IRRVIDEOOBJ, IRRIOOBJ, IRROTHEROBJ,
+// IRRGUIOBJ) plus the scene-node sources added to the final IrrlichtMt
+// STATIC target. Linux defaults: ENABLE_OPENGL=true, ENABLE_OPENGL3=true,
+// USE_SDL2=true, ENABLE_GLES2=false. Other targets (Android, Emscripten)
+// will need branched lists — added when their phases come up.
+pub const irr_sources = [_][]const u8{
+    // IRRMESHOBJ + IRRMESHLOADER — irr/src/CMakeLists.txt:257-278
+    "irr/src/WeightBuffer.cpp",
+    "irr/src/SkinnedMesh.cpp",
+    "irr/src/CMeshSceneNode.cpp",
+    "irr/src/AnimatedMeshSceneNode.cpp",
+    "irr/src/CB3DMeshFileLoader.cpp",
+    "irr/src/CGLTFMeshFileLoader.cpp",
+    "irr/src/COBJMeshFileLoader.cpp",
+    "irr/src/CXMeshFileLoader.cpp",
+
+    // IRRDRVROBJ base — irr/src/CMakeLists.txt:282-292
+    "irr/src/CNullDriver.cpp",
+    "irr/src/CEGLManager.cpp",
+    "irr/src/CSDLManager.cpp",
+    "irr/src/mt_opengl_loader.cpp",
+    "irr/src/HWBuffer.cpp",
+
+    // IRRDRVROBJ legacy OpenGL — irr/src/CMakeLists.txt:296-309 (ENABLE_OPENGL)
+    "irr/src/COpenGLCacheHandler.cpp",
+    "irr/src/COpenGLDriver.cpp",
+    "irr/src/COpenGLSLMaterialRenderer.cpp",
+    "irr/src/COpenGLExtensionHandler.cpp",
+
+    // IRRDRVROBJ unified OpenGL/GLES2 backend — irr/src/CMakeLists.txt:313-326
+    "irr/src/OpenGL/Driver.cpp",
+    "irr/src/OpenGL/ExtensionHandler.cpp",
+    "irr/src/OpenGL/FixedPipelineRenderer.cpp",
+    "irr/src/OpenGL/MaterialRenderer.cpp",
+    "irr/src/OpenGL/Renderer2D.cpp",
+    "irr/src/OpenGL/BufferObject.cpp",
+
+    // IRRDRVROBJ OpenGL3+ — irr/src/CMakeLists.txt:328-334 (ENABLE_OPENGL3)
+    "irr/src/OpenGL3/DriverGL3.cpp",
+
+    // IRRIMAGEOBJ — irr/src/CMakeLists.txt:344-360
+    "irr/src/CColorConverter.cpp",
+    "irr/src/CImage.cpp",
+    "irr/src/CImageLoaderJPG.cpp",
+    "irr/src/CImageLoaderPNG.cpp",
+    "irr/src/CImageLoaderTGA.cpp",
+    "irr/src/CImageWriterJPG.cpp",
+    "irr/src/CImageWriterPNG.cpp",
+
+    // IRRIOOBJ — irr/src/CMakeLists.txt:367-383
+    "irr/src/CFileList.cpp",
+    "irr/src/CFileSystem.cpp",
+    "irr/src/CLimitReadFile.cpp",
+    "irr/src/CMemoryFile.cpp",
+    "irr/src/CReadFile.cpp",
+    "irr/src/CWriteFile.cpp",
+    "irr/src/CZipReader.cpp",
+
+    // IRROTHEROBJ — irr/src/CMakeLists.txt:385-398
+    "irr/src/CIrrDeviceSDL.cpp",
+    "irr/src/CIrrDeviceStub.cpp",
+    "irr/src/CLogger.cpp",
+    "irr/src/COSOperator.cpp",
+    "irr/src/Irrlicht.cpp",
+    "irr/src/os.cpp",
+
+    // IRRGUIOBJ — irr/src/CMakeLists.txt:415-445
+    "irr/src/CGUIButton.cpp",
+    "irr/src/CGUICheckBox.cpp",
+    "irr/src/CGUIComboBox.cpp",
+    "irr/src/CGUIEditBox.cpp",
+    "irr/src/CGUIEnvironment.cpp",
+    "irr/src/CGUIFileOpenDialog.cpp",
+    "irr/src/CGUIFont.cpp",
+    "irr/src/CGUIImage.cpp",
+    "irr/src/CGUIListBox.cpp",
+    "irr/src/CGUIScrollBar.cpp",
+    "irr/src/CGUISkin.cpp",
+    "irr/src/CGUIStaticText.cpp",
+    "irr/src/CGUITabControl.cpp",
+    "irr/src/CGUISpriteBank.cpp",
+    "irr/src/CGUIImageList.cpp",
+
+    // IrrlichtMt main scene nodes — irr/src/CMakeLists.txt:452-471
+    "irr/src/CBillboardSceneNode.cpp",
+    "irr/src/CCameraSceneNode.cpp",
+    "irr/src/CDummyTransformationSceneNode.cpp",
+    "irr/src/CEmptySceneNode.cpp",
+    "irr/src/CMeshManipulator.cpp",
+    "irr/src/CSceneCollisionManager.cpp",
+    "irr/src/CSceneManager.cpp",
+    "irr/src/CMeshCache.cpp",
+};
+
+// IrrlichtMt compile flags for a Linux SDL2 + OpenGL + OpenGL3 build.
+// Mirrors the add_compile_definitions calls in irr/src/CMakeLists.txt:66-92,
+// 125-136. Uses -std=gnu++17 (not c++17) because IrrlichtMt's
+// CFileSystem.cpp errors out on __STRICT_ANSI__ — that's the same
+// behaviour CMake's defaults give us via implicit -std=gnu++17.
+// Platform-specific bits (_IRR_WINDOWS_, _IRR_OSX_PLATFORM_, ...) will
+// be branched on target.os.tag when their phases land.
+pub const irr_cxx_flags_linux = [_][]const u8{
+    "-std=gnu++17",
+    "-fno-strict-aliasing",
+    "-D_IRR_POSIX_API_",
+    "-D_IRR_COMPILE_WITH_SDL_DEVICE_",
+    "-D_IRR_COMPILE_WITH_JOYSTICK_EVENTS_",
+    "-D_IRR_COMPILE_WITH_OPENGL_",
+    "-DENABLE_OPENGL3",
+};
+
+// IrrlichtMt include paths. The `irr/include` PUBLIC dir is what
+// downstream client code (Phase 9) `#include`s from. `irr/src` is
+// private (internal headers).
+pub const irr_include_paths = [_][]const u8{
+    "irr/include",
+    "irr/src",
+};
+
 // Sources that the luantiserver executable adds on top of `common_sources`
 // (the EngineCommon static lib). This is what CMake calls `server_SRCS =
 // common_SRCS`, minus the files already in EngineCommon. Source: walking

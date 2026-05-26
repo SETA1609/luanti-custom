@@ -26,7 +26,7 @@ under each one).
   - [ ] libogg — *deferred, only needed once `enable_sound=true`*
   - [ ] libvorbis — *deferred, sound-only*
   - [ ] openal-soft — *deferred, sound-only*
-- [ ] **Phase 8** — IrrlichtMt (GL backend selection, SDL2 windowing, platform defines)
+- [x] **Phase 8** — IrrlichtMt (SDL2 windowing, legacy GL + GL3 backends; Linux desktop default)
 - [ ] **Phase 9** — Build `luanti` (client) executable — VALIDATION GATE 2
 - [ ] **Phase 9.5** — Translate entry-point `.cpp` files (`src/main.cpp`) to Zig via the C-ABI hourglass pattern
 - [ ] **Phase 10** — Wire up Catch2 + `src/unittest/` + `src/benchmark/` (`zig build test`)

@@ -165,6 +165,7 @@ pub fn build(b: *std.Build) void {
     // from allyourcodebase as of Zig 0.16 and will be vendored separately
     // in a follow-up Phase 7 commit.
     // -------------------------------------------------------------------------
+    const sdl_dep = b.dependency("sdl", .{ .target = target, .optimize = optimize });
     const libpng = b.dependency("libpng", .{ .target = target, .optimize = optimize }).artifact("png");
 
     // libjpeg is built inline because no community Zig 0.16-compatible
@@ -230,7 +231,7 @@ pub fn build(b: *std.Build) void {
     };
 
     const freetype = b.dependency("freetype", .{ .target = target, .optimize = optimize }).artifact("freetype");
-    const sdl2 = b.dependency("sdl", .{ .target = target, .optimize = optimize }).artifact("SDL2");
+    const sdl2 = sdl_dep.artifact("SDL2");
     const mbedtls = b.dependency("mbedtls", .{ .target = target, .optimize = optimize }).artifact("mbedtls");
     // curl: mbedTLS as the TLS backend (FORK.md decision); all the optional
     // protocol/auth extras (HTTP/2, SSH, LDAP, IDN, PSL) disabled so we
@@ -251,6 +252,63 @@ pub fn build(b: *std.Build) void {
         .libpsl = false,
     });
     const curl = vlib.findLib(curl_dep, "curl");
+
+    // -------------------------------------------------------------------------
+    // Phase 8: IrrlichtMt static library.
+    //
+    // Mirrors the OBJECT-library composition in irr/src/CMakeLists.txt
+    // (IRRMESHOBJ + IRRVIDEOOBJ + IRRIOOBJ + IRROTHEROBJ + IRRGUIOBJ plus
+    // the scene-node sources of the IrrlichtMt target itself), flattened
+    // into one static lib. Sources and flags live in build_engine.zig.
+    //
+    // Backend selection for this build (Linux desktop):
+    //   USE_SDL2 + ENABLE_OPENGL + ENABLE_OPENGL3 = all three GL backends
+    //   compile (legacy GL, unified GL3 / GLES2). The runtime picks one.
+    //   GLES2 / EGL / Win32 / Android / Emscripten branches will be added
+    //   alongside the corresponding platform phases.
+    //
+    // Required link inputs (system or vendored): zlib, jpeg, png, sdl2 —
+    // all already present from Phases 4 + 7.
+    // -------------------------------------------------------------------------
+    const irrlichtmt = blk: {
+        const mod = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .link_libcpp = true,
+        });
+        for (engine.irr_sources) |src| {
+            mod.addCSourceFile(.{ .file = b.path(src), .flags = &engine.irr_cxx_flags_linux });
+        }
+        for (engine.irr_include_paths) |p| mod.addIncludePath(b.path(p));
+        // Header propagation from the vendored deps (zlib for CZipReader,
+        // libjpeg/libpng for the image loaders, SDL2 for the device).
+        mod.linkLibrary(zlib);
+        mod.linkLibrary(libjpeg);
+        mod.linkLibrary(libpng);
+        mod.linkLibrary(sdl2);
+        // IrrlichtMt's source uses `#include <SDL.h>` (no SDL2/ prefix).
+        // The SDL2 package keeps its headers under <root>/include/ and
+        // its generated SDL_config.h under <root>/include-pregen/, so
+        // both must be on the include path.
+        mod.addIncludePath(sdl_dep.path("include"));
+        mod.addIncludePath(sdl_dep.path("include-pregen"));
+        // tiniergltf is header-only; expose its include paths directly,
+        // plus lib/jsoncpp because tiniergltf.hpp #include <json/json.h>
+        // and src/ because it also pulls in util/base64.h.
+        mod.addIncludePath(b.path("lib/tiniergltf"));
+        mod.addIncludePath(b.path("lib/jsoncpp"));
+        mod.addIncludePath(b.path("src"));
+
+        const lib = b.addLibrary(.{
+            .name = "IrrlichtMt",
+            .linkage = .static,
+            .root_module = mod,
+        });
+        // Public headers — what `#include <irrlicht.h>` resolves against
+        // for downstream targets in Phase 9.
+        lib.installHeadersDirectory(b.path("irr/include"), "", .{ .include_extensions = &.{".h"} });
+        break :blk lib;
+    };
 
     // -------------------------------------------------------------------------
     // Phase 5: EngineCommon static library.
@@ -362,6 +420,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(mbedtls);
     b.installArtifact(curl);
     b.installArtifact(engine_common);
+    b.installArtifact(irrlichtmt);
     if (luantiserver) |exe| b.installArtifact(exe);
 
     for ([_]struct { name: []const u8, lib: *std.Build.Step.Compile }{
@@ -381,6 +440,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "mbedtls", .lib = mbedtls },
         .{ .name = "curl", .lib = curl },
         .{ .name = "EngineCommon", .lib = engine_common },
+        .{ .name = "IrrlichtMt", .lib = irrlichtmt },
     }) |e| {
         const step = b.step(e.name, b.fmt("Build {s} static lib", .{e.name}));
         step.dependOn(&e.lib.step);

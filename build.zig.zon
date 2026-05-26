@@ -36,6 +36,10 @@
             .url = "git+https://github.com/allyourcodebase/curl#ab30a38bc47c8ad83ec7016f4ae3af1958d76ac3",
             .hash = "curl-8.18.0-mFDAWOf0AAAE2R408-AD3oi63paK_MBWcxkqR6zkNsmL",
         },
+        .libjpeg_src = .{
+            .url = "https://www.ijg.org/files/jpegsrc.v9f.tar.gz",
+            .hash = "N-V-__8AAB8MRQC7z9yHiE9h4hkpythIQIYO9BkbbEAO27AL",
+        },
     },
     .paths = .{
         "build.zig",

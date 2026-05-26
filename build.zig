@@ -166,6 +166,69 @@ pub fn build(b: *std.Build) void {
     // in a follow-up Phase 7 commit.
     // -------------------------------------------------------------------------
     const libpng = b.dependency("libpng", .{ .target = target, .optimize = optimize }).artifact("png");
+
+    // libjpeg is built inline because no community Zig 0.16-compatible
+    // wrapper exists for it. We fetch the upstream IJG tarball as a raw
+    // source dependency (`libjpeg_src` in build.zig.zon), synthesize the
+    // jconfig.h that ./configure would normally generate, and compile the
+    // 45 library .c files (Makefile.am libjpeg_la_SOURCES) as a static
+    // lib called "jpeg".
+    const libjpeg = blk: {
+        const dep = b.dependency("libjpeg_src", .{});
+        const wf = b.addWriteFiles();
+        _ = wf.add("jconfig.h",
+            \\#define HAVE_PROTOTYPES
+            \\#define HAVE_UNSIGNED_CHAR
+            \\#define HAVE_UNSIGNED_SHORT
+            \\#undef CHAR_IS_UNSIGNED
+            \\#define HAVE_STDDEF_H
+            \\#define HAVE_STDLIB_H
+            \\#define HAVE_LOCALE_H
+            \\#undef NEED_BSD_STRINGS
+            \\#undef NEED_SYS_TYPES_H
+            \\#undef NEED_FAR_POINTERS
+            \\#undef NEED_SHORT_EXTERNAL_NAMES
+            \\#undef INCOMPLETE_TYPES_BROKEN
+            \\#ifdef JPEG_INTERNALS
+            \\#undef RIGHT_SHIFT_IS_UNSIGNED
+            \\#endif
+            \\
+        );
+
+        const mod = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        });
+        mod.addIncludePath(dep.path("."));
+        mod.addIncludePath(wf.getDirectory());
+        for ([_][]const u8{
+            "jaricom.c",   "jcapimin.c", "jcapistd.c", "jcarith.c",  "jccoefct.c",
+            "jccolor.c",   "jcdctmgr.c", "jchuff.c",   "jcinit.c",   "jcmainct.c",
+            "jcmarker.c",  "jcmaster.c", "jcomapi.c",  "jcparam.c",  "jcprepct.c",
+            "jcsample.c",  "jctrans.c",  "jdapimin.c", "jdapistd.c", "jdarith.c",
+            "jdatadst.c",  "jdatasrc.c", "jdcoefct.c", "jdcolor.c",  "jddctmgr.c",
+            "jdhuff.c",    "jdinput.c",  "jdmainct.c", "jdmarker.c", "jdmaster.c",
+            "jdmerge.c",   "jdpostct.c", "jdsample.c", "jdtrans.c",  "jerror.c",
+            "jfdctflt.c",  "jfdctfst.c", "jfdctint.c", "jidctflt.c", "jidctfst.c",
+            "jidctint.c",  "jmemmgr.c",  "jmemnobs.c", "jquant1.c",  "jquant2.c",
+            "jutils.c",
+        }) |src| {
+            mod.addCSourceFile(.{ .file = dep.path(src), .flags = &vlib.c_flags });
+        }
+
+        const lib = b.addLibrary(.{
+            .name = "jpeg",
+            .linkage = .static,
+            .root_module = mod,
+        });
+        lib.installHeader(dep.path("jpeglib.h"), "jpeglib.h");
+        lib.installHeader(dep.path("jmorecfg.h"), "jmorecfg.h");
+        lib.installHeader(dep.path("jerror.h"), "jerror.h");
+        lib.installHeader(wf.getDirectory().path(b, "jconfig.h"), "jconfig.h");
+        break :blk lib;
+    };
+
     const freetype = b.dependency("freetype", .{ .target = target, .optimize = optimize }).artifact("freetype");
     const sdl2 = b.dependency("sdl", .{ .target = target, .optimize = optimize }).artifact("SDL2");
     const mbedtls = b.dependency("mbedtls", .{ .target = target, .optimize = optimize }).artifact("mbedtls");
@@ -293,6 +356,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(zstd);
     b.installArtifact(sqlite3);
     b.installArtifact(libpng);
+    b.installArtifact(libjpeg);
     b.installArtifact(freetype);
     b.installArtifact(sdl2);
     b.installArtifact(mbedtls);
@@ -311,6 +375,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "zstd", .lib = zstd },
         .{ .name = "sqlite3", .lib = sqlite3 },
         .{ .name = "libpng", .lib = libpng },
+        .{ .name = "libjpeg", .lib = libjpeg },
         .{ .name = "freetype", .lib = freetype },
         .{ .name = "sdl2", .lib = sdl2 },
         .{ .name = "mbedtls", .lib = mbedtls },

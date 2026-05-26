@@ -41,6 +41,15 @@ phase deletes `CMakeLists.txt` everywhere.
 **See [MIGRATION.md](MIGRATION.md)** for the live checklist — phases
 are ticked off there as they ship.
 
+## Zig build-system reference
+
+Conventions used across `build.zig`, `build_lib.zig`, `build_config.zig`,
+`build_options.zig`, and `build_engine.zig` are documented in
+[`doc/zig-0-1-6-guide.md`](doc/zig-0-1-6-guide.md). If you touch the
+build, read that first — it's where the canonical 0.16 API patterns
+(Module-based `addCSourceFile`/`addIncludePath`, `addLibrary` with
+`.linkage = .static`, `addTranslateC`) are spelled out.
+
 ## Pulling upstream
 
 ```
@@ -51,10 +60,11 @@ git rebase upstream/master    # on zig-build-system
 
 Rebases stay clean as long as the fork's edits are confined to:
 
-- `build.zig`, `build.zig.zon`, `build_lib.zig`
-- `README.md` (just the header block above this paragraph)
-- `FORK.md` (this file)
-- `.gitignore` (entries for `.zig-cache/` and `zig-out/`)
+- `build.zig`, `build.zig.zon`, `build_lib.zig`, `build_config.zig`,
+  `build_options.zig`, `build_engine.zig`
+- `MIGRATION.md`, `FORK.md`, `doc/zig-0-1-6-guide.md`
+- `README.md` (just the small fork-header block above the existing intro)
+- `.gitignore` (entries for `.zig-cache/`, `zig-out/`, `zig-pkg/`)
 
 If you find yourself editing any other file, ask whether it belongs upstream
 instead.

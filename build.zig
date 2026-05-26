@@ -512,6 +512,66 @@ pub fn build(b: *std.Build) void {
     if (luantiserver) |exe| b.installArtifact(exe);
     if (luanti) |exe| b.installArtifact(exe);
 
+    // -------------------------------------------------------------------------
+    // Data-directory installs.
+    //
+    // Mirrors the install(DIRECTORY ...) lines in CMakeLists.txt:236-256
+    // and src/CMakeLists.txt:1111-1112. Without these the runtime
+    // `porting::setSystemPaths()` in src/porting.cpp:521 can't find the
+    // `builtin/` marker and leaves path_share = "UNINITIALIZED", which is
+    // what produced the "UNINITIALIZED/fonts/Arimo-Regular.ttf" error.
+    //
+    // Layout: everything goes under `<prefix>/share/luanti/` so the
+    // second-trypath of porting.cpp (`<bindir>/../share/<PROJECT_NAME>`)
+    // finds it. With the default install prefix `zig-out/` and the
+    // executable at `zig-out/bin/luanti`, that resolves to
+    // `zig-out/share/luanti/`.
+    // -------------------------------------------------------------------------
+    const share_root = "share/luanti";
+    b.installDirectory(.{
+        .source_dir = b.path("builtin"),
+        .install_dir = .prefix,
+        .install_subdir = share_root ++ "/builtin",
+    });
+    if (opts.build_client) {
+        b.installDirectory(.{
+            .source_dir = b.path("fonts"),
+            .install_dir = .prefix,
+            .install_subdir = share_root ++ "/fonts",
+            .include_extensions = &.{ ".ttf", ".txt" },
+        });
+        b.installDirectory(.{
+            .source_dir = b.path("client/shaders"),
+            .install_dir = .prefix,
+            .install_subdir = share_root ++ "/client/shaders",
+        });
+        b.installDirectory(.{
+            .source_dir = b.path("textures/base/pack"),
+            .install_dir = .prefix,
+            .install_subdir = share_root ++ "/textures/base/pack",
+        });
+        // RUN_IN_PLACE-style extras so `zig build && ./zig-out/bin/luanti`
+        // boots without manual setup. CMake gates these on RUN_IN_PLACE;
+        // for a development build it's the more useful default.
+        b.installDirectory(.{
+            .source_dir = b.path("clientmods"),
+            .install_dir = .prefix,
+            .install_subdir = share_root ++ "/clientmods",
+        });
+        b.installDirectory(.{
+            .source_dir = b.path("client/serverlist"),
+            .install_dir = .prefix,
+            .install_subdir = share_root ++ "/client/serverlist",
+        });
+    }
+    // devtest game (and any other game checked in to games/) so the
+    // mainmenu has something to launch into.
+    b.installDirectory(.{
+        .source_dir = b.path("games"),
+        .install_dir = .prefix,
+        .install_subdir = share_root ++ "/games",
+    });
+
     for ([_]struct { name: []const u8, lib: *std.Build.Step.Compile }{
         .{ .name = "jsoncpp", .lib = jsoncpp },
         .{ .name = "gmp", .lib = gmp },

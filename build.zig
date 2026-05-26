@@ -372,10 +372,6 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .link_libcpp = true,
         });
-        // Phase 9.5: Zig now owns the true entry point via src/main.zig.
-        // We no longer compile the old src/main.cpp for Zig-built executables.
-        exe_mod.root_source_file = b.path("src/main.zig");
-
         const server_flags = [_][]const u8{
             "-std=c++17",
             "-fno-strict-aliasing",
@@ -383,20 +379,9 @@ pub fn build(b: *std.Build) void {
             "-DUSE_CMAKE_CONFIG_H",
             "-DMT_BUILDTARGET=2",
         };
-
-        // Add all server sources *except* the old main.cpp (now provided by Zig).
         for (engine.server_sources) |src| {
-            if (std.mem.eql(u8, src, "src/main.cpp")) continue;
             exe_mod.addCSourceFile(.{ .file = b.path(src), .flags = &server_flags });
         }
-
-        // The new C-ABI hourglass shim (entry_abi.cpp) provides the functions
-        // that the old main() used to call directly.
-        exe_mod.addCSourceFile(.{
-            .file = b.path("src/entry_abi.cpp"),
-            .flags = &server_flags,
-        });
-
         for (engine.include_paths) |p| exe_mod.addIncludePath(b.path(p));
         exe_mod.addIncludePath(generated.getDirectory());
 
@@ -476,10 +461,6 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .link_libcpp = true,
         });
-        // Phase 9.5: Zig now owns the true entry point via src/main.zig.
-        // We no longer compile the old src/main.cpp for Zig-built executables.
-        exe_mod.root_source_file = b.path("src/main.zig");
-
         const client_flags = [_][]const u8{
             "-std=gnu++17",
             "-fno-strict-aliasing",
@@ -487,23 +468,12 @@ pub fn build(b: *std.Build) void {
             "-DUSE_CMAKE_CONFIG_H",
             "-DMT_BUILDTARGET=1",
         };
-
-        // Add server + client sources *except* the old main.cpp (now provided by Zig).
         for (engine.server_sources) |src| {
-            if (std.mem.eql(u8, src, "src/main.cpp")) continue;
             exe_mod.addCSourceFile(.{ .file = b.path(src), .flags = &client_flags });
         }
         for (engine.client_only_sources) |src| {
             exe_mod.addCSourceFile(.{ .file = b.path(src), .flags = &client_flags });
         }
-
-        // The new C-ABI hourglass shim (entry_abi.cpp) provides the functions
-        // that the old main() used to call directly.
-        exe_mod.addCSourceFile(.{
-            .file = b.path("src/entry_abi.cpp"),
-            .flags = &client_flags,
-        });
-
         // Engine + irr include paths, plus the SDL2 pre-generated header
         // directory and the libjpeg config header (irr's image loaders
         // need both).

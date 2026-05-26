@@ -472,6 +472,9 @@ set(common_SRCS
 	itemdef.cpp
 	light.cpp
 	main.cpp
+	# Phase 9.5 C-ABI hourglass (Zig build uses these; CMake builds include
+	# them harmlessly — the old main() path is still active).
+	entry_abi.cpp
 	map_settings_manager.cpp
 	map.cpp
 	mapblock.cpp

@@ -28,8 +28,16 @@ under each one).
   - [ ] openal-soft — *deferred, sound-only*
 - [x] **Phase 8** — IrrlichtMt (SDL2 windowing, legacy GL + GL3 backends; Linux desktop default)
 - [x] **Phase 9** — Build `luanti` (client) executable — VALIDATION GATE 2 ✓ builds, `--version` runs; full gameplay validation pending user test
-- [ ] **Phase 9.5** — Translate entry-point `.cpp` files (`src/main.cpp`) to Zig via the C-ABI hourglass pattern
-- [ ] **Phase 10** — Wire up Catch2 + `src/unittest/` + `src/benchmark/` (`zig build test`)
+- [x] **Phase 9.5** — Translate entry-point `.cpp` files (`src/main.cpp`) to Zig via the C-ABI hourglass pattern
+  - [x] `src/main.zig` + `src/entry_abi.{h,cpp}` created
+  - [x] Zig build system now uses `root_source_file` for both executables; old `main.cpp` is excluded for Zig builds
+  - [x] CMake build remains 100% unaffected (original `main()` path)
+  - [x] Initial validation: `zig build luantiserver && ./zig-out/bin/luantiserver --version` produces the correct banner (and other early paths like `--gameid list` also work)
+- [~] **Phase 10** — Wire up Catch2 + `src/unittest/` + `src/benchmark/` (`zig build test`)
+  - [x] Catch2 dependency + amalgamated build when `-Dbuild-unittests` / `-Dbuild-benchmarks`
+  - [x] C-ABI exposure for `luanti_run_catch2_tests` / `luanti_run_catch2_benchmarks`
+  - [x] `main.zig` now collects real arguments and dispatches `--run-tests` / `--run-benchmarks`
+  - [ ] Full unittest/*.cpp sources wired + `zig build test` step (in progress)
 - [ ] **Phase 11** — Windows cross-compile (`-Dtarget=x86_64-windows-{gnu,msvc}`)
 - [ ] **Phase 12** — macOS `.app` bundle (Info.plist substitution, aarch64-macos + x86_64-macos)
 - [ ] **Phase 13** — Android `.so` (replace `externalNativeBuild` in Gradle)

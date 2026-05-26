@@ -40,6 +40,10 @@
             .url = "https://www.ijg.org/files/jpegsrc.v9f.tar.gz",
             .hash = "N-V-__8AAB8MRQC7z9yHiE9h4hkpythIQIYO9BkbbEAO27AL",
         },
+        .catch2 = .{
+            .url = "https://github.com/catchorg/Catch2/archive/refs/tags/v3.6.0.tar.gz",
+            .hash = "N-V-__8AABuffwD9bQKn18wxhRchf9RQMQwXtyWIkVYlcvyu",
+        },
     },
     .paths = .{
         "build.zig",

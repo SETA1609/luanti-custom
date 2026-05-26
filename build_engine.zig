@@ -94,12 +94,14 @@ pub const common_sources = [_][]const u8{
     "src/network/socket.cpp",
 };
 
-// C++23, plus the USE_CMAKE_CONFIG_H toggle (src/CMakeLists.txt:281) that
+// C++17, plus the USE_CMAKE_CONFIG_H toggle (src/CMakeLists.txt:281) that
 // tells engine .cpp files to read cmake_config.h instead of falling back
-// to default constants.
+// to default constants. -fno-sanitize=undefined matches CMake's Debug
+// behavior (no UBSan); see build_lib.zig::cxx_flags for the rationale.
 pub const cxx_flags = [_][]const u8{
     "-std=c++17",
     "-fno-strict-aliasing",
+    "-fno-sanitize=undefined",
     "-DUSE_CMAKE_CONFIG_H",
 };
 
@@ -223,6 +225,7 @@ pub const irr_sources = [_][]const u8{
 pub const irr_cxx_flags_linux = [_][]const u8{
     "-std=gnu++17",
     "-fno-strict-aliasing",
+    "-fno-sanitize=undefined",
     "-D_IRR_POSIX_API_",
     "-D_IRR_COMPILE_WITH_SDL_DEVICE_",
     "-D_IRR_COMPILE_WITH_JOYSTICK_EVENTS_",

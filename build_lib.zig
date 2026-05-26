@@ -15,11 +15,25 @@ const std = @import("std");
 /// attempted earlier in the fork but the engine sources rely on
 /// pre-C++20 behavior (implicit <iterator>, ostream<<wchar_t, ...) so
 /// the bump has been parked until after the build-system migration.
-pub const cxx_flags = [_][]const u8{ "-std=c++17", "-fno-strict-aliasing" };
+///
+/// `-fno-sanitize=undefined` matches CMake's Debug behavior — CMake
+/// doesn't enable UBSan, but Zig's default Debug C compile does. The
+/// engine + IrrlichtMt code has signed-integer overflow and float-to-int
+/// casts that fire UBSan in normal use (e.g. IrrlichtMt's CGUIScrollBar
+/// computes scroll positions via float→int cast that can exceed INT_MAX
+/// for empty tables). Per-file disable keeps `sanitize_c = .full` for
+/// the executable's link step so deps' libubsan references resolve;
+/// only our own compiled objects skip the instrumentation.
+pub const cxx_flags = [_][]const u8{
+    "-std=c++17",
+    "-fno-strict-aliasing",
+    "-fno-sanitize=undefined",
+};
 
-/// C flags used for every vendored C source file. Empty — the toolchain
-/// picks a recent default and CMake doesn't set anything special either.
-pub const c_flags = [_][]const u8{};
+/// C flags used for every vendored C source file.
+pub const c_flags = [_][]const u8{
+    "-fno-sanitize=undefined",
+};
 
 /// Install one header file to `zig-out/include/<dest>`.
 pub const HeaderFile = struct {

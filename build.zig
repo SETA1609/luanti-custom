@@ -153,6 +153,31 @@ pub fn build(b: *std.Build) void {
     const sqlite3 = b.dependency("sqlite3", .{ .target = target, .optimize = optimize }).artifact("sqlite3");
 
     // -------------------------------------------------------------------------
+    // Phase 10 prep: Catch2 (only built when -Dbuild-unittests or -Dbuild-benchmarks)
+    // We use the amalgamated sources from the official release — simple and
+    // matches how many projects consume Catch2 v3.
+    // -------------------------------------------------------------------------
+    const catch2_lib = if (opts.build_unittests or opts.build_benchmarks) blk: {
+        const dep = b.dependency("catch2", .{});
+        const mod = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .link_libcpp = true,
+        });
+        mod.addIncludePath(dep.path("src"));
+        mod.addCSourceFile(.{
+            .file = dep.path("src/catch_amalgamated.cpp"),
+            .flags = &.{ "-std=c++17", "-fno-sanitize=undefined" },
+        });
+        const lib = b.addLibrary(.{
+            .name = "Catch2",
+            .linkage = .static,
+            .root_module = mod,
+        });
+        break :blk lib;
+    } else null;
+
+    // -------------------------------------------------------------------------
     // Phase 7: client media stack — fetched packages.
     //
     // libpng:   image loader for IrrlichtMt (Phase 8) and the engine
@@ -347,15 +372,31 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .link_libcpp = true,
         });
+        // Phase 9.5: Zig now owns the true entry point via src/main.zig.
+        // We no longer compile the old src/main.cpp for Zig-built executables.
+        exe_mod.root_source_file = b.path("src/main.zig");
+
         const server_flags = [_][]const u8{
             "-std=c++17",
             "-fno-strict-aliasing",
+            "-fno-sanitize=undefined", // match CMake's no-UBSan Debug
             "-DUSE_CMAKE_CONFIG_H",
             "-DMT_BUILDTARGET=2",
         };
+
+        // Add all server sources *except* the old main.cpp (now provided by Zig).
         for (engine.server_sources) |src| {
+            if (std.mem.eql(u8, src, "src/main.cpp")) continue;
             exe_mod.addCSourceFile(.{ .file = b.path(src), .flags = &server_flags });
         }
+
+        // The new C-ABI hourglass shim (entry_abi.cpp) provides the functions
+        // that the old main() used to call directly.
+        exe_mod.addCSourceFile(.{
+            .file = b.path("src/entry_abi.cpp"),
+            .flags = &server_flags,
+        });
+
         for (engine.include_paths) |p| exe_mod.addIncludePath(b.path(p));
         exe_mod.addIncludePath(generated.getDirectory());
 
@@ -370,6 +411,22 @@ pub fn build(b: *std.Build) void {
         if (!opts.use_luajit) {
             exe_mod.linkLibrary(lua);
             exe_mod.linkLibrary(bitop);
+        }
+
+        // Phase 10: Catch2 + unittest sources
+        if (opts.build_unittests or opts.build_benchmarks) {
+            if (catch2_lib) |c2| exe_mod.linkLibrary(c2);
+            // Core test driver (provides run_catch2_tests / run_catch2_benchmarks)
+            exe_mod.addCSourceFile(.{
+                .file = b.path("src/test/test.cpp"),
+                .flags = &server_flags,
+            });
+            // Add the amalgamated Catch2 header path for the test code
+            if (b.lazyDependency("catch2", .{})) |dep| {
+                exe_mod.addIncludePath(dep.path("src"));
+            }
+            // TODO (Phase 10 full): Add actual unittest/*.cpp files from src/unittest/
+            // For the first cut we get the infrastructure and runner working.
         }
 
         const exe = b.addExecutable(.{
@@ -419,18 +476,34 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .link_libcpp = true,
         });
+        // Phase 9.5: Zig now owns the true entry point via src/main.zig.
+        // We no longer compile the old src/main.cpp for Zig-built executables.
+        exe_mod.root_source_file = b.path("src/main.zig");
+
         const client_flags = [_][]const u8{
             "-std=gnu++17",
             "-fno-strict-aliasing",
+            "-fno-sanitize=undefined", // match CMake's no-UBSan Debug
             "-DUSE_CMAKE_CONFIG_H",
             "-DMT_BUILDTARGET=1",
         };
+
+        // Add server + client sources *except* the old main.cpp (now provided by Zig).
         for (engine.server_sources) |src| {
+            if (std.mem.eql(u8, src, "src/main.cpp")) continue;
             exe_mod.addCSourceFile(.{ .file = b.path(src), .flags = &client_flags });
         }
         for (engine.client_only_sources) |src| {
             exe_mod.addCSourceFile(.{ .file = b.path(src), .flags = &client_flags });
         }
+
+        // The new C-ABI hourglass shim (entry_abi.cpp) provides the functions
+        // that the old main() used to call directly.
+        exe_mod.addCSourceFile(.{
+            .file = b.path("src/entry_abi.cpp"),
+            .flags = &client_flags,
+        });
+
         // Engine + irr include paths, plus the SDL2 pre-generated header
         // directory and the libjpeg config header (irr's image loaders
         // need both).

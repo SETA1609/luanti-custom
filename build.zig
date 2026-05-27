@@ -120,14 +120,20 @@ pub fn build(b: *std.Build) void {
     // Lua 5.1.4. .c sources compiled as C++ to match upstream's
     // set_source_files_properties(LANGUAGE CXX). LUA_USE_POSIX / DLOPEN /
     // MACOSX / BUILD_AS_DLL gated on os_tag.
+    // -fno-sanitize=undefined: Lua's lua_number2int (ltable.c / lcode.c) casts a
+    // double to int *knowing* it may overflow (e.g. the table key 2^32), then
+    // checks the round-trip to decide if the key is an integer. That truncation
+    // is intended Lua behavior, but Zig's Debug UBSan traps the overflowing
+    // cast. Same reason the engine/IrrlichtMt/C libs carry it — see
+    // build_lib.zig::cxx_flags. CMake's Debug build has no UBSan, so this matches.
     const lua_flags: []const []const u8 = switch (os_tag) {
         .macos, .ios, .driverkit, .tvos, .visionos, .watchos => &.{
-            "-std=c++17", "-DLUA_USE_POSIX", "-DLUA_USE_MACOSX", "-DLUA_USE_DLOPEN",
+            "-std=c++17", "-fno-sanitize=undefined", "-DLUA_USE_POSIX", "-DLUA_USE_MACOSX", "-DLUA_USE_DLOPEN",
         },
-        .linux => &.{ "-std=c++17", "-DLUA_USE_POSIX", "-DLUA_USE_DLOPEN" },
-        .freebsd, .openbsd, .netbsd, .dragonfly => &.{ "-std=c++17", "-DLUA_USE_POSIX" },
-        .windows => &.{ "-std=c++17", "-DLUA_BUILD_AS_DLL" },
-        else => &.{ "-std=c++17", "-DLUA_ANSI" },
+        .linux => &.{ "-std=c++17", "-fno-sanitize=undefined", "-DLUA_USE_POSIX", "-DLUA_USE_DLOPEN" },
+        .freebsd, .openbsd, .netbsd, .dragonfly => &.{ "-std=c++17", "-fno-sanitize=undefined", "-DLUA_USE_POSIX" },
+        .windows => &.{ "-std=c++17", "-fno-sanitize=undefined", "-DLUA_BUILD_AS_DLL" },
+        else => &.{ "-std=c++17", "-fno-sanitize=undefined", "-DLUA_ANSI" },
     };
 
     const lua = vlib.addVendorLib(b, target, optimize, .{
@@ -190,7 +196,16 @@ pub fn build(b: *std.Build) void {
     // from allyourcodebase as of Zig 0.16 and will be vendored separately
     // in a follow-up Phase 7 commit.
     // -------------------------------------------------------------------------
-    const sdl_dep = b.dependency("sdl", .{ .target = target, .optimize = optimize });
+    // POC (Phase 9 / Gate 2): drop the pulse audio driver. enable-sound is
+    // false during the migration, so we don't need it — and its
+    // linkSystemLibrary("pulse") on the static SDL2 module embeds libpulse.so
+    // into libSDL2.a, which ld.lld rejects. X11 is handled by the dlopen patch
+    // inside the SDL package itself (SDL_VIDEO_DRIVER_X11_DYNAMIC).
+    const sdl_dep = b.dependency("sdl", .{
+        .target = target,
+        .optimize = optimize,
+        .audio_driver_pulse = false,
+    });
     const libpng = b.dependency("libpng", .{ .target = target, .optimize = optimize }).artifact("png");
 
     // libjpeg is built inline because no community Zig 0.16-compatible
